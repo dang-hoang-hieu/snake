@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 const GRID_SIZE = 10;
 const CELL_SIZE = 30;
@@ -15,6 +15,10 @@ const SnakeGame = () => {
   const [food, setFood] = useState({ x: 5, y: 5 });
   const [direction, setDirection] = useState('RIGHT');
   const [gameOver, setGameOver] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [startY, setStartY] = useState(0);
+  const [cellSize, setCellSize] = useState(30);
+  const gameAreaRef = useRef(null);
 
   const moveSnake = useCallback(() => {
     if (gameOver) return;
@@ -56,35 +60,72 @@ const SnakeGame = () => {
     });
   }, [direction, food, gameOver]);
 
+  const handleDirection = useCallback((newDirection) => {
+    setDirection((prevDirection) => {
+      const opposites = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' };
+      return opposites[prevDirection] !== newDirection ? newDirection : prevDirection;
+    });
+  }, []);
+
+  const DirectionButton = ({ direction, label }) => (
+    <button
+      style={{
+        width: '50px',
+        height: '50px',
+        margin: '5px',
+        fontSize: '20px',
+        touchAction: 'manipulation'
+      }}
+      onClick={() => handleDirection(direction)}
+    >
+      {label}
+    </button>
+  );
+
   useEffect(() => {
     const handleKeyPress = (e) => {
       switch (e.key) {
-        case 'ArrowUp':
-          setDirection('UP');
-          break;
-        case 'ArrowDown':
-          setDirection('DOWN');
-          break;
-        case 'ArrowLeft':
-          setDirection('LEFT');
-          break;
-        case 'ArrowRight':
-          setDirection('RIGHT');
-          break;
-        default:
-          break;
+        case 'ArrowUp': handleDirection('UP'); break;
+        case 'ArrowDown': handleDirection('DOWN'); break;
+        case 'ArrowLeft': handleDirection('LEFT'); break;
+        case 'ArrowRight': handleDirection('RIGHT'); break;
+        default: break;
       }
     };
 
     document.addEventListener('keydown', handleKeyPress);
-
     const gameInterval = setInterval(moveSnake, 200);
 
     return () => {
       document.removeEventListener('keydown', handleKeyPress);
       clearInterval(gameInterval);
     };
-  }, [moveSnake]);
+  }, [moveSnake, handleDirection]);
+
+  const handleTouchStart = (e) => {
+    const touch = e.touches[0];
+    setStartX(touch.clientX);
+    setStartY(touch.clientY);
+  };
+
+  const handleTouchMove = (e) => {
+    if (!startX || !startY) return;
+
+    const touch = e.touches[0];
+    const diffX = startX - touch.clientX;
+    const diffY = startY - touch.clientY;
+
+    if (Math.abs(diffX) > Math.abs(diffY)) {
+      // Horizontal swipe
+      handleDirection(diffX > 0 ? 'LEFT' : 'RIGHT');
+    } else {
+      // Vertical swipe
+      handleDirection(diffY > 0 ? 'UP' : 'DOWN');
+    }
+
+    setStartX(0);
+    setStartY(0);
+  };
 
   const getRandomFood = () => {
     return {
@@ -106,8 +147,7 @@ const SnakeGame = () => {
       <div
         key={`${x}-${y}`}
         style={{
-          width: CELL_SIZE,
-          height: CELL_SIZE,
+          aspectRatio: '1 / 1',
           backgroundColor: isSnake ? 'green' : isFood ? 'red' : 'white',
           border: '1px solid #ccc',
         }}
@@ -115,13 +155,51 @@ const SnakeGame = () => {
     );
   };
 
+  useEffect(() => {
+    const updateCellSize = () => {
+      const gameArea = gameAreaRef.current;
+      if (gameArea) {
+        const size = Math.min(
+          Math.floor((window.innerWidth * 0.9) / GRID_SIZE),
+          Math.floor((window.innerHeight * 0.5) / GRID_SIZE)
+        );
+        setCellSize(size);
+      }
+    };
+
+    updateCellSize();
+    window.addEventListener('resize', updateCellSize);
+    return () => window.removeEventListener('resize', updateCellSize);
+  }, []);
+
+  const restartGame = () => {
+    setSnake(INITIAL_SNAKE);
+    setFood(getRandomFood());
+    setDirection('RIGHT');
+    setGameOver(false);
+  };
+
   return (
-    <div>
+    <div style={{
+      width: '100%',
+      height: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center'
+    }}>
       <div
+        ref={gameAreaRef}
         style={{
           display: 'grid',
-          gridTemplateColumns: `repeat(${GRID_SIZE}, ${CELL_SIZE}px)`,
+          gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)`,
+          gridTemplateRows: `repeat(${GRID_SIZE}, 1fr)`,
           gap: '1px',
+          aspectRatio: '1 / 1',
+          width: '60vmin',
+          maxWidth: '60vw',
+          maxHeight: '60vw',
+          margin: '0 auto',
         }}
       >
         {Array.from({ length: GRID_SIZE * GRID_SIZE }).map((_, index) => {
@@ -130,7 +208,36 @@ const SnakeGame = () => {
           return renderCell(x, y);
         })}
       </div>
-      {gameOver && <div>Game Over!</div>}
+      <div style={{ marginTop: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <DirectionButton direction="UP" label="↑" />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <DirectionButton direction="LEFT" label="←" />
+          <DirectionButton direction="RIGHT" label="→" />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <DirectionButton direction="DOWN" label="↓" />
+        </div>
+      </div>
+      {gameOver && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: 'rgba(0,0,0,0.7)',
+            color: 'white',
+            padding: '20px',
+            borderRadius: '10px',
+            textAlign: 'center'
+          }}
+          onClick={restartGame}
+        >
+          Game Over! Tap to restart
+        </div>
+      )}
     </div>
   );
 };

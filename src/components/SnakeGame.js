@@ -10,105 +10,90 @@ const INITIAL_SNAKE = [
   { x: 0, y: 5 },
 ];
 
+const SPEEDS = {
+  SLOW: 200,    // 200ms per move
+  NORMAL: 150,  // 150ms per move
+  FAST: 100     // 100ms per move (current speed)
+};
+
 const SnakeGame = () => {
   const [snake, setSnake] = useState(INITIAL_SNAKE);
   const [food, setFood] = useState({ x: 5, y: 5 });
   const [direction, setDirection] = useState('RIGHT');
   const [gameOver, setGameOver] = useState(false);
-  const [startX, setStartX] = useState(0);
-  const [startY, setStartY] = useState(0);
-  const [cellSize, setCellSize] = useState(30);
-  const gameAreaRef = useRef(null);
-  const [lastDirectionChange, setLastDirectionChange] = useState(0);
+  const speedRef = useRef('NORMAL');
+  const directionRef = useRef(direction);
+  const requestRef = useRef();
+  const lastUpdateTimeRef = useRef(0);
+  const gameSpeedRef = useRef(SPEEDS.NORMAL); // ms per move
+  const [, forceUpdate] = useState();
 
-  const moveSnake = useCallback(() => {
-    if (gameOver) return;
+  useEffect(() => {
+    gameSpeedRef.current = SPEEDS[speedRef.current];
+  }, []);
 
-    setSnake((prevSnake) => {
-      const newSnake = [...prevSnake];
-      const head = { ...newSnake[0] };
+  const moveSnake = useCallback((timestamp) => {
+    if (timestamp - lastUpdateTimeRef.current >= gameSpeedRef.current) {
+      setSnake((prevSnake) => {
+        const newSnake = [...prevSnake];
+        const head = { ...newSnake[0] };
 
-      switch (direction) {
-        case 'UP':
-          head.y = (head.y - 1 + GRID_SIZE) % GRID_SIZE;
-          break;
-        case 'DOWN':
-          head.y = (head.y + 1) % GRID_SIZE;
-          break;
-        case 'LEFT':
-          head.x = (head.x - 1 + GRID_SIZE) % GRID_SIZE;
-          break;
-        case 'RIGHT':
-          head.x = (head.x + 1) % GRID_SIZE;
-          break;
-        default:
-          break;
-      }
+        switch (directionRef.current) {
+          case 'UP':
+            head.y = (head.y - 1 + GRID_SIZE) % GRID_SIZE;
+            break;
+          case 'DOWN':
+            head.y = (head.y + 1) % GRID_SIZE;
+            break;
+          case 'LEFT':
+            head.x = (head.x - 1 + GRID_SIZE) % GRID_SIZE;
+            break;
+          case 'RIGHT':
+            head.x = (head.x + 1) % GRID_SIZE;
+            break;
+          default:
+            break;
+        }
 
-      newSnake.unshift(head);
+        newSnake.unshift(head);
 
-      if (head.x === food.x && head.y === food.y) {
-        setFood(getRandomFood());
-      } else {
-        newSnake.pop();
-      }
+        if (head.x === food.x && head.y === food.y) {
+          setFood(getRandomFood());
+        } else {
+          newSnake.pop();
+        }
 
-      if (isCollision(newSnake)) {
-        setGameOver(true);
-      }
+        if (isCollision(newSnake)) {
+          setGameOver(true);
+        }
 
-      return newSnake;
-    });
-  }, [direction, food, gameOver]);
+        return newSnake;
+      });
+
+      lastUpdateTimeRef.current = timestamp;
+    }
+
+    if (!gameOver) {
+      requestRef.current = requestAnimationFrame(moveSnake);
+    }
+  }, [food, gameOver]);
+
+  useEffect(() => {
+    requestRef.current = requestAnimationFrame(moveSnake);
+    return () => cancelAnimationFrame(requestRef.current);
+  }, [moveSnake]);
+
+  useEffect(() => {
+    gameSpeedRef.current = SPEEDS[speedRef.current];
+  }, []);
 
   const handleDirection = useCallback((newDirection) => {
-    const now = Date.now();
-    if (now - lastDirectionChange > 100) { // 100ms delay between direction changes
-      setDirection((prevDirection) => {
-        const opposites = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' };
-        return opposites[prevDirection] !== newDirection ? newDirection : prevDirection;
-      });
-      setLastDirectionChange(now);
+    const opposites = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' };
+    if (opposites[directionRef.current] !== newDirection) {
+      directionRef.current = newDirection;
+      setDirection(newDirection);
     }
-  }, [lastDirectionChange]);
-
-  const DirectionButton = ({ direction, label }) => {
-    const [isPressed, setIsPressed] = useState(false);
-
-    const handlePress = (e) => {
-      e.preventDefault(); // Prevent default touch behavior
-      setIsPressed(true);
-      handleDirection(direction);
-    };
-
-    const handleRelease = () => {
-      setIsPressed(false);
-    };
-
-    return (
-      <button
-        style={{
-          width: '60px',
-          height: '60px',
-          margin: '5px',
-          fontSize: '24px',
-          backgroundColor: isPressed ? '#4CAF50' : '#8BC34A',
-          border: 'none',
-          borderRadius: '5px',
-          color: 'white',
-          touchAction: 'manipulation',
-          transition: 'background-color 0.1s'
-        }}
-        onTouchStart={handlePress}
-        onTouchEnd={handleRelease}
-        onMouseDown={handlePress}
-        onMouseUp={handleRelease}
-        onMouseLeave={handleRelease}
-      >
-        {label}
-      </button>
-    );
-  };
+  }, []);
 
   useEffect(() => {
     const handleKeyPress = (e) => {
@@ -121,53 +106,82 @@ const SnakeGame = () => {
       }
     };
 
-    document.addEventListener('keydown', handleKeyPress);
-    const gameInterval = setInterval(moveSnake, 200);
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [handleDirection]);
 
-    return () => {
-      document.removeEventListener('keydown', handleKeyPress);
-      clearInterval(gameInterval);
+  const handleSpeedChange = useCallback((newSpeed) => {
+    speedRef.current = newSpeed;
+    gameSpeedRef.current = SPEEDS[newSpeed];
+    forceUpdate({}); // Force a re-render without changing state
+  }, []);
+
+  const SpeedButton = useCallback(({ speedOption }) => (
+    <button
+      style={{
+        padding: '5px 10px',
+        margin: '0 5px',
+        backgroundColor: speedRef.current === speedOption ? '#4CAF50' : '#8BC34A',
+        border: 'none',
+        borderRadius: '5px',
+        color: 'white',
+        cursor: 'pointer'
+      }}
+      onClick={() => handleSpeedChange(speedOption)}
+    >
+      {speedOption.charAt(0) + speedOption.slice(1).toLowerCase()}
+    </button>
+  ), [handleSpeedChange]);
+
+  const DirectionButton = ({ direction, label }) => {
+    const handlePress = (e) => {
+      e.preventDefault();
+      handleDirection(direction);
     };
-  }, [moveSnake, handleDirection]);
 
-  const handleTouchStart = (e) => {
-    const touch = e.touches[0];
-    setStartX(touch.clientX);
-    setStartY(touch.clientY);
+    return (
+      <button
+        style={{
+          width: '60px',
+          height: '60px',
+          margin: '5px',
+          fontSize: '24px',
+          backgroundColor: '#8BC34A',
+          border: 'none',
+          borderRadius: '5px',
+          color: 'white',
+          touchAction: 'manipulation',
+        }}
+        onTouchStart={handlePress}
+        onMouseDown={handlePress}
+      >
+        {label}
+      </button>
+    );
   };
 
-  const handleTouchMove = (e) => {
-    if (!startX || !startY) return;
-
-    const touch = e.touches[0];
-    const diffX = startX - touch.clientX;
-    const diffY = startY - touch.clientY;
-
-    if (Math.abs(diffX) > Math.abs(diffY)) {
-      // Horizontal swipe
-      handleDirection(diffX > 0 ? 'LEFT' : 'RIGHT');
-    } else {
-      // Vertical swipe
-      handleDirection(diffY > 0 ? 'UP' : 'DOWN');
-    }
-
-    setStartX(0);
-    setStartY(0);
-  };
-
-  const getRandomFood = () => {
+  const getRandomFood = useCallback(() => {
     return {
       x: Math.floor(Math.random() * GRID_SIZE),
       y: Math.floor(Math.random() * GRID_SIZE),
     };
-  };
+  }, []);
 
-  const isCollision = (snakeToCheck) => {
+  const isCollision = useCallback((snakeToCheck) => {
     const head = snakeToCheck[0];
     return snakeToCheck.slice(1).some((segment) => segment.x === head.x && segment.y === head.y);
-  };
+  }, []);
 
-  const renderCell = (x, y) => {
+  const restartGame = useCallback(() => {
+    setSnake(INITIAL_SNAKE);
+    setFood(getRandomFood());
+    directionRef.current = 'RIGHT';
+    setDirection('RIGHT');
+    setGameOver(false);
+    requestRef.current = requestAnimationFrame(moveSnake);
+  }, [getRandomFood, moveSnake]);
+
+  const renderCell = useCallback((x, y) => {
     const isSnake = snake.some((segment) => segment.x === x && segment.y === y);
     const isFood = food.x === x && food.y === y;
 
@@ -175,37 +189,14 @@ const SnakeGame = () => {
       <div
         key={`${x}-${y}`}
         style={{
-          aspectRatio: '1 / 1',
+          width: CELL_SIZE,
+          height: CELL_SIZE,
           backgroundColor: isSnake ? 'green' : isFood ? 'red' : 'white',
           border: '1px solid #ccc',
         }}
       />
     );
-  };
-
-  useEffect(() => {
-    const updateCellSize = () => {
-      const gameArea = gameAreaRef.current;
-      if (gameArea) {
-        const size = Math.min(
-          Math.floor((window.innerWidth * 0.9) / GRID_SIZE),
-          Math.floor((window.innerHeight * 0.5) / GRID_SIZE)
-        );
-        setCellSize(size);
-      }
-    };
-
-    updateCellSize();
-    window.addEventListener('resize', updateCellSize);
-    return () => window.removeEventListener('resize', updateCellSize);
-  }, []);
-
-  const restartGame = () => {
-    setSnake(INITIAL_SNAKE);
-    setFood(getRandomFood());
-    setDirection('RIGHT');
-    setGameOver(false);
-  };
+  }, [snake, food]);
 
   return (
     <div style={{
@@ -216,18 +207,20 @@ const SnakeGame = () => {
       justifyContent: 'center',
       alignItems: 'center'
     }}>
+      <div style={{
+        marginBottom: '20px',
+        display: 'flex',
+        justifyContent: 'center'
+      }}>
+        <SpeedButton speedOption="SLOW" />
+        <SpeedButton speedOption="NORMAL" />
+        <SpeedButton speedOption="FAST" />
+      </div>
       <div
-        ref={gameAreaRef}
         style={{
           display: 'grid',
-          gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)`,
-          gridTemplateRows: `repeat(${GRID_SIZE}, 1fr)`,
+          gridTemplateColumns: `repeat(${GRID_SIZE}, ${CELL_SIZE}px)`,
           gap: '1px',
-          aspectRatio: '1 / 1',
-          width: '60vmin',
-          maxWidth: '60vw',
-          maxHeight: '60vw',
-          margin: '0 auto',
         }}
       >
         {Array.from({ length: GRID_SIZE * GRID_SIZE }).map((_, index) => {

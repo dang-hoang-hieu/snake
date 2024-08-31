@@ -19,6 +19,7 @@ const SnakeGame = () => {
   const [startY, setStartY] = useState(0);
   const [cellSize, setCellSize] = useState(30);
   const gameAreaRef = useRef(null);
+  const [lastDirectionChange, setLastDirectionChange] = useState(0);
 
   const moveSnake = useCallback(() => {
     if (gameOver) return;
@@ -61,26 +62,53 @@ const SnakeGame = () => {
   }, [direction, food, gameOver]);
 
   const handleDirection = useCallback((newDirection) => {
-    setDirection((prevDirection) => {
-      const opposites = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' };
-      return opposites[prevDirection] !== newDirection ? newDirection : prevDirection;
-    });
-  }, []);
+    const now = Date.now();
+    if (now - lastDirectionChange > 100) { // 100ms delay between direction changes
+      setDirection((prevDirection) => {
+        const opposites = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' };
+        return opposites[prevDirection] !== newDirection ? newDirection : prevDirection;
+      });
+      setLastDirectionChange(now);
+    }
+  }, [lastDirectionChange]);
 
-  const DirectionButton = ({ direction, label }) => (
-    <button
-      style={{
-        width: '50px',
-        height: '50px',
-        margin: '5px',
-        fontSize: '20px',
-        touchAction: 'manipulation'
-      }}
-      onClick={() => handleDirection(direction)}
-    >
-      {label}
-    </button>
-  );
+  const DirectionButton = ({ direction, label }) => {
+    const [isPressed, setIsPressed] = useState(false);
+
+    const handlePress = (e) => {
+      e.preventDefault(); // Prevent default touch behavior
+      setIsPressed(true);
+      handleDirection(direction);
+    };
+
+    const handleRelease = () => {
+      setIsPressed(false);
+    };
+
+    return (
+      <button
+        style={{
+          width: '60px',
+          height: '60px',
+          margin: '5px',
+          fontSize: '24px',
+          backgroundColor: isPressed ? '#4CAF50' : '#8BC34A',
+          border: 'none',
+          borderRadius: '5px',
+          color: 'white',
+          touchAction: 'manipulation',
+          transition: 'background-color 0.1s'
+        }}
+        onTouchStart={handlePress}
+        onTouchEnd={handleRelease}
+        onMouseDown={handlePress}
+        onMouseUp={handleRelease}
+        onMouseLeave={handleRelease}
+      >
+        {label}
+      </button>
+    );
+  };
 
   useEffect(() => {
     const handleKeyPress = (e) => {

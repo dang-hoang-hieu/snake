@@ -20,16 +20,41 @@ const SnakeGame = () => {
   const [food, setFood] = useState({ x: 5, y: 5 });
   const [direction, setDirection] = useState('RIGHT');
   const [gameOver, setGameOver] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
   const speedRef = useRef('NORMAL');
   const directionRef = useRef(direction);
   const gameSpeedRef = useRef(SPEEDS.NORMAL);
+
+  const createAudio = (path) => {
+    const audio = new Audio(process.env.PUBLIC_URL + path);
+    audio.onerror = (e) => console.error(`Error loading audio file ${path}:`, e);
+    return audio;
+  };
+
+  const eatSound = useRef(createAudio('/eat.mp3'));
+  const deadSound = useRef(createAudio('/dead.mp3'));
+
+  const playSound = (sound) => {
+    if (sound.readyState === 4) {
+      sound.play().catch(error => {
+        console.error('Error playing sound:', error);
+      });
+    } else {
+      console.error('Audio not ready to play');
+    }
+  };
+
+  useEffect(() => {
+    eatSound.current.oncanplaythrough = () => console.log('Eat sound loaded');
+    deadSound.current.oncanplaythrough = () => console.log('Dead sound loaded');
+  }, []);
 
   const isCollision = useCallback((head) => {
     return snake.slice(1).some(segment => segment.x === head.x && segment.y === head.y);
   }, [snake]);
 
   const moveSnake = useCallback(() => {
-    if (gameOver) return;
+    if (gameOver || !gameStarted) return;
 
     setSnake(prevSnake => {
       const newSnake = [...prevSnake];
@@ -45,12 +70,14 @@ const SnakeGame = () => {
 
       if (isCollision(head)) {
         setGameOver(true);
+        playSound(deadSound.current);
         return prevSnake;
       }
 
       newSnake.unshift(head);
 
       if (head.x === food.x && head.y === food.y) {
+        playSound(eatSound.current);
         setFood(getRandomFood());
       } else {
         newSnake.pop();
@@ -58,15 +85,17 @@ const SnakeGame = () => {
 
       return newSnake;
     });
-  }, [food, gameOver, isCollision]);
+  }, [food, gameOver, isCollision, gameStarted]);
 
   useEffect(() => {
-    const gameLoop = setInterval(() => {
-      moveSnake();
-    }, gameSpeedRef.current);
+    if (gameStarted && !gameOver) {
+      const gameLoop = setInterval(() => {
+        moveSnake();
+      }, gameSpeedRef.current);
 
-    return () => clearInterval(gameLoop);
-  }, [moveSnake]);
+      return () => clearInterval(gameLoop);
+    }
+  }, [moveSnake, gameStarted, gameOver]);
 
   const handleDirection = useCallback((newDirection) => {
     const opposites = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' };
@@ -122,18 +151,56 @@ const SnakeGame = () => {
     );
   }, [snake, food]);
 
+  // Add this effect to handle audio context activation
+  useEffect(() => {
+    const unlockAudio = () => {
+      eatSound.current.play().then(() => {
+        eatSound.current.pause();
+        eatSound.current.currentTime = 0;
+      }).catch(err => console.log('Audio play failed', err));
+
+      deadSound.current.play().then(() => {
+        deadSound.current.pause();
+        deadSound.current.currentTime = 0;
+      }).catch(err => console.log('Audio play failed', err));
+
+      document.removeEventListener('touchstart', unlockAudio);
+    };
+
+    document.addEventListener('touchstart', unlockAudio);
+
+    return () => {
+      document.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
+
+  const startGame = () => {
+    setGameStarted(true);
+    setGameOver(false);
+    setSnake(INITIAL_SNAKE);
+    setFood(getRandomFood());
+    directionRef.current = 'RIGHT';
+    setDirection('RIGHT');
+  };
+
   return (
     <div className="phone-container">
       <div className="phone-screen">
         <div className="game-title">SNAKE</div>
-        <div className="game-board">
-          {Array.from({ length: GRID_SIZE * GRID_SIZE }).map((_, index) => {
-            const x = index % GRID_SIZE;
-            const y = Math.floor(index / GRID_SIZE);
-            return renderCell(x, y);
-          })}
-        </div>
-        <div className="score">Score: {snake.length - INITIAL_SNAKE.length}</div>
+        {!gameStarted ? (
+          <button className="start-btn" onClick={startGame}>Start Game</button>
+        ) : (
+          <>
+            <div className="game-board">
+              {Array.from({ length: GRID_SIZE * GRID_SIZE }).map((_, index) => {
+                const x = index % GRID_SIZE;
+                const y = Math.floor(index / GRID_SIZE);
+                return renderCell(x, y);
+              })}
+            </div>
+            <div className="score">Score: {snake.length - INITIAL_SNAKE.length}</div>
+          </>
+        )}
       </div>
       <div className="controls">
         <button className="control-btn" onClick={() => handleDirection('UP')}>↑</button>
@@ -151,7 +218,7 @@ const SnakeGame = () => {
       {gameOver && (
         <div className="game-over">
           <div>Game Over!</div>
-          <button className="restart-btn" onClick={restartGame}>Try Again</button>
+          <button className="restart-btn" onClick={startGame}>Try Again</button>
         </div>
       )}
     </div>
